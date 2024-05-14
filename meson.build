@@ -4,7 +4,7 @@ project(
 	version: 'the.cake.is.a.lie',
 	default_options: [
 		'c_std=c99',
-		'cpp_std=c++17',
+		'cpp_std=c++latest,c++2a',
 		'cpp_rtti=false',
 	],
 	meson_version: '>=0.64.0',
@@ -72,7 +72,11 @@ if static_variant == 'system' and host_platform == 'windows' and host_libc == 'm
 endif
 
 is_static = static_variant != 'none'
-is_debug = get_option('optimization') in [ '0', 'g' ]
+
+is_debug = get_option('buildtype') in [ 'debug', 'debugoptimized' ]
+debug_info = get_option('debug_info')
+is_optimized = get_option('optimization') not in [ '0', 'g' ]
+
 app_exe = get_option('app_exe')
 
 tpt_libs_static = 'none'
@@ -210,7 +214,7 @@ if host_platform == 'emscripten'
 		'-s', 'USE_ZLIB=1',
 		'-s', 'DISABLE_EXCEPTION_CATCHING=0',
 	]
-	if is_debug
+	if debug_info
 		project_link_args += [ '--source-map-base=./' ]
 		emcc_args += [ '-gsource-map' ]
 	endif
@@ -225,10 +229,11 @@ else
 endif
 json_dep = dependency('jsoncpp', static: is_static)
 
-if not is_debug
+if is_optimized
 	args_ccomp_opt = []
 	if c_compiler.get_argument_syntax() == 'msvc'
 		args_ccomp_opt += [
+			'/O2',
 			'/Oy-',
 			'/fp:fast',
 		]
@@ -238,6 +243,7 @@ if not is_debug
 		]
 	else
 		args_ccomp_opt += [
+			'-O3',
 			'-ftree-vectorize',
 			'-funsafe-math-optimizations',
 			'-ffast-math',
@@ -248,7 +254,19 @@ if not is_debug
 	project_cpp_args += args_ccomp_opt
 endif
 
-if not is_debug
+if debug_info
+	args_ccomp_debuginfo = []
+	if c_compiler.get_argument_syntax() == 'msvc'
+		args_ccomp_debuginfo += [ '/Zi' ]
+		project_link_args += [ '/debug:full' ]
+	else
+		args_ccomp_debuginfo += [ '-g' ]
+	endif
+	project_c_args += args_ccomp_debuginfo
+	project_cpp_args += args_ccomp_debuginfo
+endif
+
+if is_optimized
 	args_ccomp_lto = []
 	if c_compiler.get_id() in [ 'clang', 'clang-cl' ]
 		# use ThinLTO for Clang/LLVM
@@ -320,7 +338,7 @@ if host_platform == 'windows'
 	args_ccomp_win = []
 	defs_ccomp_win = []
 	defs_ccomp_win += [
-		'_WIN32_WINNT=0x0501',
+		'_WIN32_WINNT=0x0602',
 		'NOMINMAX',
 		'UNICODE',
 		'_UNICODE',
@@ -445,6 +463,15 @@ endif
 threads_dep = dependency('threads')
 
 mimalloc_options = cmake.subproject_options()
+if is_optimized
+	if debug_info
+		mimalloc_options.add_cmake_defines({ 'CMAKE_BUILD_TYPE': 'RelWithDebInfo' })
+	else
+		mimalloc_options.add_cmake_defines({ 'CMAKE_BUILD_TYPE': 'Release' })
+	endif
+else
+	mimalloc_options.add_cmake_defines({ 'CMAKE_BUILD_TYPE': 'Debug' })
+endif
 mimalloc_options.add_cmake_defines(
 	{ 'MI_SECURE': 1 },
 	{ 'MI_DEBUG_FULL': 1 },
@@ -452,10 +479,11 @@ mimalloc_options.add_cmake_defines(
 	{ 'MI_USE_CXX': 1 },
 	{ 'MI_WIN_REDIRECT': 0 },
 )
-mimalloc_options.append_compile_args(
-	'cpp',
-	project_cpp_args
-)
+cpp_args_str = ''
+foreach arg : project_cpp_args
+	cpp_args_str += arg + ' '
+endforeach
+mimalloc_options.add_cmake_defines({ 'CMAKE_CXX_FLAGS': cpp_args_str })
 mimalloc_proj = cmake.subproject('mimalloc', options: mimalloc_options)
 mimalloc_dep = mimalloc_proj.dependency('mimalloc-static')
 

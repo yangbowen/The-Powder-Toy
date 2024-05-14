@@ -6,6 +6,12 @@ option(
 	description: 'Build statically using libraries present on the system (\'system\') or using prebuilt libraries official builds use (\'prebuilt\')'
 )
 option(
+	'debug_info',
+	type: 'boolean',
+	value: true,
+	description: 'Generate debug informaation during build'
+)
+option(
 	'beta',
 	type: 'boolean',
 	value: false,
