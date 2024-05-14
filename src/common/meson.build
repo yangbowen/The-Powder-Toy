@@ -1,4 +1,5 @@
 common_files += files(
+	'Memory.cpp',
 	'String.cpp',
 	'tpt-rand.cpp',
 )

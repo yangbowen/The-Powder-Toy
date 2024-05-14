@@ -19,6 +19,7 @@ python = import('python')
 python3_prog = python.find_installation('python3')
 
 fs = import('fs')
+cmake = import('cmake')
 to_array = generator(
 	python3_prog,
 	output: [ '@PLAINNAME@.cpp', '@PLAINNAME@.h' ],
@@ -164,19 +165,6 @@ endif
 if lua_variant == 'luajit' and host_platform == 'emscripten'
 	error('luajit does not work with emscripten')
 endif
-if lua_variant == 'none'
-	lua_dep = []
-elif lua_variant == 'lua5.1' or lua_variant == 'lua5.2'
-	lua_dep = dependency(lua_variant + '-c++', static: is_static, required: false)
-	if not lua_dep.found()
-		if not get_option('workaround_noncpp_lua')
-			error('your system @0@ is not compatible with C++, configure with -Dworkaround_noncpp_lua=true to disable this error'.format(lua_variant))
-		endif
-		lua_dep = dependency(lua_variant, static: is_static)
-	endif
-elif lua_variant == 'luajit'
-	lua_dep = dependency('luajit', static: is_static)
-endif
 
 enable_http = get_option('http')
 if host_platform == 'android'
@@ -192,17 +180,11 @@ if host_platform == 'android'
 		error('tpt-libs android platform mismatch')
 	endif
 endif
-curl_dep = []
-if enable_http and host_platform != 'emscripten'
-	curl_dep = dependency('libcurl', static: is_static)
-endif
 
 project_link_args = []
 project_c_args = []
 project_cpp_args = []
 
-fftw_dep = dependency('fftw3f', static: is_static)
-threads_dep = dependency('threads')
 if host_platform == 'emscripten'
 	zlib_dep = []
 	png_dep = []
@@ -460,17 +442,69 @@ if get_option('export_lua_symbols')
 	endif
 endif
 
+threads_dep = dependency('threads')
+
+mimalloc_options = cmake.subproject_options()
+mimalloc_options.add_cmake_defines(
+	{ 'MI_SECURE': 1 },
+	{ 'MI_DEBUG_FULL': 1 },
+	{ 'MI_SHOW_ERRORS': 1 },
+	{ 'MI_USE_CXX': 1 },
+	{ 'MI_WIN_REDIRECT': 0 },
+)
+mimalloc_options.append_compile_args(
+	'cpp',
+	project_cpp_args
+)
+mimalloc_proj = cmake.subproject('mimalloc', options: mimalloc_options)
+mimalloc_dep = mimalloc_proj.dependency('mimalloc-static')
+
+if lua_variant == 'none'
+	lua_dep = []
+elif lua_variant == 'lua5.1' or lua_variant == 'lua5.2'
+	lua_dep = dependency(lua_variant + '-c++', static: is_static, required: false)
+	if not lua_dep.found()
+		if not get_option('workaround_noncpp_lua')
+			error('your system @0@ is not compatible with C++, configure with -Dworkaround_noncpp_lua=true to disable this error'.format(lua_variant))
+		endif
+		lua_dep = dependency(lua_variant, static: is_static)
+	endif
+elif lua_variant == 'luajit'
+	lua_dep = dependency('luajit', static: is_static)
+endif
+
+if host_platform == 'emscripten'
+	zlib_dep = []
+	png_dep = []
+	sdl2_dep = []
+	bzip2_dep = []
+else
+	zlib_dep = dependency('zlib', static: is_static)
+	png_dep = dependency('libpng16', static: is_static)
+	sdl2_dep = dependency('sdl2', static: is_static)
+	bzip2_dep = dependency('bzip2', static: is_static)
+endif
+json_dep = dependency('jsoncpp', static: is_static)
+
+curl_dep = []
+if enable_http and host_platform != 'emscripten'
+	curl_dep = dependency('libcurl', static: is_static)
+endif
+
+fftw_dep = dependency('fftw3f', static: is_static)
+
 if get_option('build_powder')
 	powder_deps += project_deps + [
 		threads_dep,
+		mimalloc_dep,
+		lua_dep,
 		zlib_dep,
 		png_dep,
 		sdl2_dep,
-		lua_dep,
-		curl_dep,
-		fftw_dep,
 		bzip2_dep,
 		json_dep,
+		curl_dep,
+		fftw_dep,
 	]
 	if host_platform == 'android'
 		powder_sha = shared_library(
