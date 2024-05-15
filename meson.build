@@ -281,6 +281,8 @@ endif
 
 if c_compiler.get_argument_syntax() == 'msvc'
 	args_msvc = [
+		'/permissive-',
+		'/Zc:__cplusplus',
 		'/GS',
 		'/D_SCL_SECURE_NO_WARNINGS',
 	]
@@ -498,7 +500,9 @@ elif lua_variant == 'lua5.1' or lua_variant == 'lua5.2'
 		lua_dep = dependency(lua_variant, static: is_static)
 	endif
 elif lua_variant == 'luajit'
-	lua_dep = dependency('luajit', static: is_static)
+	#lua_dep = dependency('luajit', static: is_static)
+	lua_proj = subproject('luajit')
+	lua_dep = lua_proj.get_variable('luajit_dep')
 endif
 
 if host_platform == 'emscripten'
