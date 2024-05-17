@@ -82,41 +82,54 @@ if host_platform == 'android'
 	conf_data.set('ANDROID_PROPERTIES', '\n'.join(android_properties))
 endif
 
-powder_files = files(
+common_inc_files += files(
+	'Misc.h',
+	'Format.h',
+	'Probability.h',
+)
+common_files += files(
+	'Misc.cpp',
+	'Format.cpp',
+	'Probability.cpp',
+)
+
+powder_inc_files += files(
+	'PowderToySDL.h',
+	'lua/CommandInterface.h',
+	'lua/CommandInterfacePtr.h',
+	'lua/TPTSTypes.h',
+)
+powder_files += files(
 	'SDLCompat.cpp',
 	'PowderToySDL.cpp',
 	'PowderToy.cpp',
 	'lua/CommandInterface.cpp',
 	'lua/TPTSTypes.cpp',
 )
-if host_platform == 'emscripten'
-	powder_files += files(
-		'PowderToySDLEmscripten.cpp',
-	)
-else
-	powder_files += files(
-		'PowderToySDLCommon.cpp',
-	)
-endif
-if is_x86
-	powder_files += files('X86KillDenormals.cpp')
-endif
-
-render_files = files(
+render_files += files(
 	'PowderToyRenderer.cpp',
 )
-
-font_files = files(
+font_inc_files += files(
+	'PowderToySDL.h',
+	'FpsLimit.h',
+)
+font_files += files(
 	'PowderToyFontEditor.cpp',
 	'PowderToySDL.cpp',
-	'PowderToySDLCommon.cpp',
 )
 
-common_files = files(
-	'Format.cpp',
-	'Misc.cpp',
-	'Probability.cpp',
-)
+if host_platform == 'emscripten'
+	powder_files += files('PowderToySDLEmscripten.cpp')
+	font_files += files('PowderToySDLEmscripten.cpp')
+else
+	powder_files += files('PowderToySDLCommon.cpp')
+	font_files += files('PowderToySDLCommon.cpp')
+endif
+
+if is_x86
+	powder_inc_files += files('X86KillDenormals.h')
+	powder_files += files('X86KillDenormals.cpp')
+endif
 
 resolve_vcs_tag = get_option('resolve_vcs_tag')
 if resolve_vcs_tag == 'yes' or (resolve_vcs_tag == 'static_release_only' and not is_debug and is_static)
@@ -128,7 +141,7 @@ if resolve_vcs_tag == 'yes' or (resolve_vcs_tag == 'static_release_only' and not
 else
 	vcs_tag_conf_data = configuration_data()
 	vcs_tag_conf_data.set('VCS_TAG', '')
-	configure_file(
+	common_files += configure_file(
 		input: 'VcsTag.template.h',
 		output: 'VcsTag.h',
 		configuration: vcs_tag_conf_data
@@ -136,6 +149,8 @@ else
 endif
 
 if host_platform == 'linux'
+	powder_inc_files += files('WindowIcon.h')
+	font_inc_files += files('WindowIcon.h')
 	powder_files += files('WindowIcon.cpp')
 	font_files += files('WindowIcon.cpp')
 endif
@@ -161,22 +176,6 @@ subdir('resampler')
 subdir('simulation')
 subdir('tasks')
 
-powder_files += common_files
-render_files += common_files
-font_files += common_files
-
-simulation_elem_defs = []
-foreach elem_name_id : simulation_elem_ids
-	simulation_elem_defs += 'ELEMENT_DEFINE(' + elem_name_id[0] + ', ' + elem_name_id[1].to_string() + ');'
-endforeach
-elements_conf_data = configuration_data()
-elements_conf_data.set('element_defs', '\n'.join(simulation_elem_defs))
-configure_file(
-	input: 'simulation/ElementNumbers.template.h',
-	output: 'ElementNumbers.h',
-	configuration: elements_conf_data
-)
-
 if platform_clipboard
 	clipboard_impl_defs = []
 	foreach impl_subsys_factory : clipboard_impl_factories
@@ -184,12 +183,24 @@ if platform_clipboard
 	endforeach
 	clipboard_impls_data = configuration_data()
 	clipboard_impls_data.set('impl_defs', '\n'.join(clipboard_impl_defs))
-	configure_file(
+	powder_inc_files += configure_file(
 		input: 'common/clipboard/ClipboardImpls.template.h',
 		output: 'ClipboardImpls.h',
 		configuration: clipboard_impls_data
 	)
 endif
+
+simulation_elem_defs = []
+foreach elem_name_id : simulation_elem_ids
+	simulation_elem_defs += 'ELEMENT_DEFINE(' + elem_name_id[0] + ', ' + elem_name_id[1].to_string() + ');'
+endforeach
+elements_conf_data = configuration_data()
+elements_conf_data.set('element_defs', '\n'.join(simulation_elem_defs))
+common_inc_files += configure_file(
+	input: 'simulation/ElementNumbers.template.h',
+	output: 'ElementNumbers.h',
+	configuration: elements_conf_data
+)
 
 simulation_tool_defs = []
 foreach tool_name_id : simulation_tool_ids
@@ -197,13 +208,13 @@ foreach tool_name_id : simulation_tool_ids
 endforeach
 tools_conf_data = configuration_data()
 tools_conf_data.set('tool_defs', '\n'.join(simulation_tool_defs))
-configure_file(
+common_inc_files += configure_file(
 	input: 'simulation/ToolNumbers.template.h',
 	output: 'ToolNumbers.h',
 	configuration: tools_conf_data
 )
 
-configure_file(
+common_inc_files += configure_file(
 	input: 'Config.template.h',
 	output: 'Config.h',
 	configuration: conf_data

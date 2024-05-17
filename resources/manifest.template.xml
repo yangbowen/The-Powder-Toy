@@ -1,0 +1,9 @@
+<?xml version ="1.0" encoding ="utf-8" ?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+	<assemblyIdentity type="win32" name="." version="@DISPLAY_VERSION_MAJOR@.@DISPLAY_VERSION_MINOR@.0.@BUILD_NUM@"/>
+	<asmv3:application>
+		<asmv3:windowsSettings>
+			@ACTIVE_CODEPAGE_MANIFEST_ENTRY@
+		</asmv3:windowsSettings>
+	</asmv3:application>
+</assembly>

@@ -1,6 +1,6 @@
 if host_platform == 'windows'
 	if use_bluescreen
-		project_deps += [
+		common_deps += [
 			c_compiler.find_library('dbghelp'),
 			c_compiler.find_library('psapi'),
 		]
@@ -17,7 +17,7 @@ elif host_platform == 'linux'
 	# export symbols so backtrace_symbols works, see above
 	bluescreen_export_symbols = true
 	if host_machine.system() in [ 'freebsd' ]
-		project_deps += [
+		common_deps += [
 			c_compiler.find_library('execinfo'),
 		]
 	endif

@@ -189,46 +189,6 @@ project_link_args = []
 project_c_args = []
 project_cpp_args = []
 
-if host_platform == 'emscripten'
-	zlib_dep = []
-	png_dep = []
-	sdl2_dep = []
-	bzip2_dep = []
-	project_link_args += [
-		'--no-heap-copy',
-		'-s', 'WASM=1',
-		'-s', 'ALLOW_MEMORY_GROWTH=1',
-		'-s', 'FORCE_FILESYSTEM=1',
-		'-s', 'EXIT_RUNTIME=0',
-		'-s', 'EXPORTED_RUNTIME_METHODS=ccall,cwrap',
-		'-s', 'FS_DEBUG',
-		'-s', 'MODULARIZE',
-		'-s', 'EXPORT_NAME=create_' + app_exe,
-		'-Wl,-u,_emscripten_run_callback_on_thread',
-		'-lidbfs.js',
-	]
-	emcc_args = [
-		'-s', 'USE_SDL=2',
-		'-s', 'USE_BZIP2=1',
-		'-s', 'USE_LIBPNG',
-		'-s', 'USE_ZLIB=1',
-		'-s', 'DISABLE_EXCEPTION_CATCHING=0',
-	]
-	if debug_info
-		project_link_args += [ '--source-map-base=./' ]
-		emcc_args += [ '-gsource-map' ]
-	endif
-	project_link_args += emcc_args
-	project_c_args += emcc_args
-	project_cpp_args += emcc_args
-else
-	zlib_dep = dependency('zlib', static: is_static)
-	png_dep = dependency('libpng16', static: is_static)
-	sdl2_dep = dependency('sdl2', static: is_static)
-	bzip2_dep = dependency('bzip2', static: is_static)
-endif
-json_dep = dependency('jsoncpp', static: is_static)
-
 if is_optimized
 	args_ccomp_opt = []
 	if c_compiler.get_argument_syntax() == 'msvc'
@@ -259,6 +219,9 @@ if debug_info
 	if c_compiler.get_argument_syntax() == 'msvc'
 		args_ccomp_debuginfo += [ '/Zi' ]
 		project_link_args += [ '/debug:full' ]
+	elif emcc_args
+		project_link_args += [ '--source-map-base=./' ]
+		emcc_args += [ '-gsource-map' ]
 	else
 		args_ccomp_debuginfo += [ '-g' ]
 	endif
@@ -388,6 +351,27 @@ elif host_platform == 'android'
 	project_link_args += [ '-static-libstdc++' ]
 	project_c_args += args_ccomp_android
 	project_cpp_args += args_ccomp_android
+elif host_platform == 'emscripten'
+	args_ccomp_emscripten = [
+		'-s', 'DISABLE_EXCEPTION_CATCHING=0',
+	]
+	project_link_args += [
+		'-o', app_exe + '.js', # so we get a .wasm, and a .js
+		'--no-heap-copy',
+		'-s', 'WASM=1',
+		'-s', 'ALLOW_MEMORY_GROWTH=1',
+		'-s', 'FORCE_FILESYSTEM=1',
+		'-s', 'EXIT_RUNTIME=0',
+		'-s', 'EXPORTED_RUNTIME_METHODS=ccall,cwrap',
+		'-s', 'FS_DEBUG',
+		'-s', 'MODULARIZE',
+		'-s', 'EXPORT_NAME=create_' + app_exe,
+		'-Wl,-u,_emscripten_run_callback_on_thread',
+		'-lidbfs.js',
+	]
+	project_link_args += args_ccomp_emscripten
+	project_c_args += args_ccomp_emscripten
+	project_cpp_args += args_ccomp_emscripten
 endif
 
 if c_compiler.get_argument_syntax() == 'msvc' and c_compiler.get_id() not in [ 'clang-cl' ]
@@ -415,6 +399,19 @@ else
 	]
 endif
 
+link_args_str = ''
+c_args_str = ''
+cpp_args_str = ''
+foreach arg : project_link_args
+	link_args_str += arg + ' '
+endforeach
+foreach arg : project_c_args
+	c_args_str += arg + ' '
+endforeach
+foreach arg : project_cpp_args
+	cpp_args_str += arg + ' '
+endforeach
+
 project_inc = include_directories([ 'src', 'resources' ])
 
 if host_platform == 'windows'
@@ -427,9 +424,20 @@ else
 	ident_platform = 'UNKNOWN'
 endif
 
-project_deps = []
-data_files = []
+common_files = []
+common_inc_files = []
+common_deps = []
+powder_files = []
+powder_inc_files = []
 powder_deps = []
+render_files = []
+render_inc_files = []
+render_deps = []
+font_files = []
+font_inc_files = []
+font_deps = []
+
+data_files = []
 
 project_export_dynamic = false
 
@@ -440,11 +448,6 @@ powder_files += data_files
 render_files += data_files
 font_files += data_files
 
-if host_platform == 'emscripten'
-	project_link_args += [
-		'-o', app_exe + '.js', # so we get a .wasm, and a .js
-	]
-endif
 if get_option('export_lua_symbols')
 	if is_static and lua_variant != 'none' and not project_export_dynamic
 		if host_platform == 'windows'
@@ -462,7 +465,7 @@ if get_option('export_lua_symbols')
 	endif
 endif
 
-threads_dep = dependency('threads')
+common_deps += dependency('threads')
 
 mimalloc_options = cmake.subproject_options()
 if is_optimized
@@ -481,17 +484,16 @@ mimalloc_options.add_cmake_defines(
 	{ 'MI_USE_CXX': 1 },
 	{ 'MI_WIN_REDIRECT': 0 },
 )
-cpp_args_str = ''
-foreach arg : project_cpp_args
-	cpp_args_str += arg + ' '
-endforeach
-mimalloc_options.add_cmake_defines({ 'CMAKE_CXX_FLAGS': cpp_args_str })
+mimalloc_options.add_cmake_defines({
+	'CMAKE_C_FLAGS': c_args_str,
+	'CMAKE_CXX_FLAGS': cpp_args_str,
+	'CMAKE_EXE_LINKER_FLAGS': link_args_str,
+	'CMAKE_SHARED_LINKER_FLAGS': link_args_str,
+})
 mimalloc_proj = cmake.subproject('mimalloc', options: mimalloc_options)
-mimalloc_dep = mimalloc_proj.dependency('mimalloc-static')
+common_deps += mimalloc_proj.dependency('mimalloc-static')
 
-if lua_variant == 'none'
-	lua_dep = []
-elif lua_variant == 'lua5.1' or lua_variant == 'lua5.2'
+if lua_variant == 'lua5.1' or lua_variant == 'lua5.2'
 	lua_dep = dependency(lua_variant + '-c++', static: is_static, required: false)
 	if not lua_dep.found()
 		if not get_option('workaround_noncpp_lua')
@@ -500,65 +502,58 @@ elif lua_variant == 'lua5.1' or lua_variant == 'lua5.2'
 		lua_dep = dependency(lua_variant, static: is_static)
 	endif
 elif lua_variant == 'luajit'
-	#lua_dep = dependency('luajit', static: is_static)
 	lua_proj = subproject('luajit')
 	lua_dep = lua_proj.get_variable('luajit_dep')
 endif
+powder_deps += lua_dep
 
 if host_platform == 'emscripten'
-	zlib_dep = []
-	png_dep = []
-	sdl2_dep = []
-	bzip2_dep = []
+	args_emcc_deps = [
+		'-s', 'USE_ZLIB=1',
+		'-s', 'USE_LIBPNG',
+		'-s', 'USE_BZIP2=1',
+		'-s', 'USE_SDL=2',
+	]
+	project_link_args += args_emcc_deps
+	project_c_args += args_emcc_deps
+	project_cpp_args += args_emcc_deps
 else
-	zlib_dep = dependency('zlib', static: is_static)
-	png_dep = dependency('libpng16', static: is_static)
-	sdl2_dep = dependency('sdl2', static: is_static)
-	bzip2_dep = dependency('bzip2', static: is_static)
-endif
-json_dep = dependency('jsoncpp', static: is_static)
-
-curl_dep = []
-if enable_http and host_platform != 'emscripten'
-	curl_dep = dependency('libcurl', static: is_static)
+	common_deps += dependency('zlib', static: is_static)
+	common_deps += dependency('libpng16', static: is_static)
+	common_deps += dependency('bzip2', static: is_static)
+	powder_deps += dependency('sdl2', static: is_static)
+	font_deps += dependency('sdl2', static: is_static)
+	if enable_http
+		powder_deps += dependency('libcurl', static: is_static)
+	endif
 endif
 
-fftw_dep = dependency('fftw3f', static: is_static)
+common_deps += dependency('jsoncpp', static: is_static)
+
+powder_deps += dependency('fftw3f', static: is_static)
 
 if get_option('build_powder')
-	powder_deps += project_deps + [
-		threads_dep,
-		mimalloc_dep,
-		lua_dep,
-		zlib_dep,
-		png_dep,
-		sdl2_dep,
-		bzip2_dep,
-		json_dep,
-		curl_dep,
-		fftw_dep,
-	]
 	if host_platform == 'android'
 		powder_sha = shared_library(
 			app_exe,
-			sources: powder_files,
+			sources: [ powder_files, common_files ],
 			include_directories: project_inc,
 			c_args: project_c_args,
 			cpp_args: project_cpp_args,
 			link_args: project_link_args,
-			dependencies: powder_deps,
+			dependencies: common_deps + powder_deps,
 		)
 		subdir('android')
 	else
 		executable(
 			app_exe,
-			sources: powder_files,
+			sources: [ powder_files, common_files ],
 			include_directories: project_inc,
 			c_args: project_c_args,
 			cpp_args: project_cpp_args,
 			win_subsystem: is_debug ? 'console' : 'windows',
 			link_args: project_link_args,
-			dependencies: powder_deps,
+			dependencies: common_deps + powder_deps,
 			export_dynamic: project_export_dynamic,
 			install: true,
 		)
@@ -569,25 +564,18 @@ if get_option('build_render')
 	if host_platform == 'emscripten'
 		error('render does not target emscripten')
 	endif
-	render_deps = project_deps + [
-		threads_dep,
-		zlib_dep,
-		bzip2_dep,
-		json_dep,
-		png_dep,
-	]
 	render_link_args = project_link_args
 	if host_platform == 'linux' and is_static
 		render_link_args += [ '-static' ]
 	endif
 	executable(
 		'render',
-		sources: render_files,
+		sources: [ render_files, common_files ],
 		include_directories: project_inc,
 		c_args: project_c_args,
 		cpp_args: project_cpp_args,
 		link_args: render_link_args,
-		dependencies: render_deps,
+		dependencies: common_deps + render_deps,
 		export_dynamic: project_export_dynamic,
 	)
 endif
@@ -596,22 +584,14 @@ if get_option('build_font')
 	if host_platform == 'emscripten'
 		error('font does not target emscripten')
 	endif
-	font_deps = project_deps + [
-		threads_dep,
-		zlib_dep,
-		png_dep,
-		sdl2_dep,
-		bzip2_dep,
-		json_dep,
-	]
 	executable(
 		'font',
-		sources: font_files,
+		sources: [ font_files, common_files ],
 		include_directories: project_inc,
 		c_args: project_c_args,
 		cpp_args: project_cpp_args,
 		link_args: project_link_args,
-		dependencies: font_deps,
+		dependencies: common_deps + font_deps,
 		export_dynamic: project_export_dynamic,
 	)
 endif
